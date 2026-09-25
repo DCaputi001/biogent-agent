@@ -1,0 +1,72 @@
+# --- The build plan stays out of git ---
+# BIOGENT_PLAN.md is local-only: it contains pilot-researcher data arrangements
+# and the discovery-funnel design, neither of which belongs on GitHub.
+#
+# By EXACT NAME, deliberately not a glob. A pattern like *_PLAN.md would also
+# swallow any other plan doc this repo later tracks -- which is exactly the bug
+# the main BioGent repo already hit once, when a broad "planning" ignore block
+# hid ARCHITECTURE.md and PRODUCTION_PLAN.md and left AGENTS.md pointing at
+# files that were missing from a fresh clone.
+#
+# .gitignore rather than .git/info/exclude (which is what the plan file itself
+# suggests): exclude is per-clone and unversioned, so cloning onto a second
+# machine and forgetting to re-add it is one `git add -A` away from publishing
+# the plan. This line travels with the repo. The cost is leaking the filename,
+# not its contents.
+BIOGENT_PLAN.md
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.log
+
+# --- Environment / secrets ---
+.env
+.env.*
+!.env.example
+
+# --- R ---
+.Rhistory
+.RData
+.Rproj.user/
+# renv caches the packages themselves; only the lockfile is tracked.
+renv/library/
+renv/local/
+renv/staging/
+
+# --- Research data (never commit real datasets) ---
+# Pilot researcher data is unpublished and belongs to them. Test datasets,
+# marker CSVs, .h5ad and .rds files all live here and stay here.
+data/
+uploads/
+*.h5ad
+*.rds
+*.h5
+*.loom
+
+# --- Generated analysis output ---
+# Eval REPORTS are tracked on purpose (see evals/reports/) -- these are the
+# intermediate artifacts a run produces, which are not.
+scratch/
+figures/
+*.pdf
+!docs/**/*.pdf
+
+# --- Docker ---
+*.pid
+
+# --- OS clutter ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Editor / IDE ---
+.vscode/
+.idea/
+*.swp

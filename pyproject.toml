@@ -1,0 +1,27 @@
+[project]
+name = "biogent-agent"
+version = "0.1.0"
+description = "BioGent's bioinformatics analysis agent — LangGraph orchestrator with sandboxed MCP servers"
+# Matches services/rag in the main BioGent repo, so the import into
+# services/bio-agent/ does not drag a second Python version in with it.
+requires-python = ">=3.10"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+    # tests/test_repo_invariants.py parses the CI workflows and the compose
+    # file to check the repo's own structural guarantees.
+    "pyyaml",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.uv]
+# This repo is a workspace, not a distributable package: the components
+# (orchestrator/, servers/*) are applications with their own containers, not
+# something anyone pip-installs. Declaring that keeps `uv sync` from trying to
+# build a wheel out of a source tree that has no package in it.
+package = false

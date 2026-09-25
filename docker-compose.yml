@@ -1,0 +1,43 @@
+# Local development stack.
+#
+# Every path here is relative to the repo root, and nothing reaches above it.
+# This whole tree is moved into services/bio-agent/ in the main BioGent repo at
+# Phase 7.9, and a relative-only compose file makes that a move rather than a
+# rewrite. tests/test_repo_invariants.py enforces it.
+#
+# Only Postgres so far. The orchestrator and the MCP servers land in 7.1, each
+# with its own Dockerfile and its own service block here. An empty placeholder
+# service that cannot start would be worse than an absent one.
+
+services:
+  postgres:
+    # LangGraph's checkpointer, which is what lets a graph pause on a
+    # long-running job and resume after a restart (7.5). Stands in for RDS,
+    # which this service does not touch until 7.10 at the earliest.
+    image: postgres:16
+    environment:
+      POSTGRES_USER: biogent
+      POSTGRES_PASSWORD: localdev
+      POSTGRES_DB: biogent_agent
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U biogent -d biogent_agent"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+
+# Port 5433, not 5432: the main BioGent repo's services/rag/docker-compose.yml
+# already publishes Postgres on 5432. Running both stacks at once is normal
+# while checking this service against the real upload path, and two containers
+# cannot bind the same host port.
+#
+# Local credentials only. They are not secrets -- this database holds graph
+# checkpoints on a developer machine and is never reachable from outside it.
+# Nothing in this repo may hold a credential that reaches anything real; see
+# AGENTS.md.

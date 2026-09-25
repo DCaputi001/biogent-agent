@@ -1,0 +1,83 @@
+# CI for the standalone biogent-agent repo.
+#
+# Modeled on the main BioGent repo's .github/workflows/ci.yml, minus everything
+# that touches a cloud. No path filters: the whole repo is one service, so
+# every job is relevant to every change.
+#
+# WHAT IS DELIBERATELY ABSENT: any deploy job, any ECR push, any Terraform, any
+# cloud credentials. This repo loads researcher-uploaded .rds files, and R
+# deserialization is a known RCE path (CVE-2024-27322) -- credentials that can
+# reach production have no business in the same repository. Deployment is the
+# main repo's job, after the import. tests/test_repo_invariants.py fails the
+# build if any of it creeps back in.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# Least privilege. Nothing here writes to the repo.
+permissions:
+  contents: read
+
+jobs:
+  secret-scan:
+    # Runs on every push whatever the change: a credential committed and then
+    # deleted is still in history, so this is not a job worth making
+    # conditional.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history, so a secret added and later removed is still caught.
+          fetch-depth: 0
+
+      - name: Scan for committed secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          # Lets the action read a pull request's commit range. Personal
+          # repositories need no GITLEAKS_LICENSE.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  plan-file-not-committed:
+    # BIOGENT_PLAN.md is local-only. .gitignore is the mechanism; this is the
+    # check that the mechanism held, including against a `git add -f`.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Assert the build plan was never committed
+        run: |
+          if git log --all --name-only --format=format: -- BIOGENT_PLAN.md | grep -q .; then
+            echo "BIOGENT_PLAN.md appears in this repo's history."
+            echo "It is local-only and must never be committed."
+            exit 1
+          fi
+          echo "BIOGENT_PLAN.md is absent from history, as intended."
+
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Run tests (no API key required)
+        env:
+          # The same guard the main repo uses: make sure nothing in the unit
+          # suite quietly reaches a real model. It matters more here -- this
+          # service orchestrates many model calls, and the researcher pays for
+          # every one of them.
+          ANTHROPIC_API_KEY: ""
+        run: uv run pytest -q
