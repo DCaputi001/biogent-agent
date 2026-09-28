@@ -55,11 +55,18 @@ uv run pytest -q
 
 docker compose build
 docker compose up -d --wait
+
+# The runtime isolation tests need the stack up, so they are not in the fast
+# suite. This is the check that the sandbox boundary actually holds.
+$env:BIOGENT_REQUIRE_DOCKER_STACK = "1"; uv run pytest -q -m docker
+
+# What the graph does today: one tool call to each server.
+docker compose exec orchestrator python -m orchestrator.graph
 ```
 
-`--wait` returns only once every container reports healthy. Each component
-currently serves a health endpoint and nothing else; the MCP servers replace
-those handlers on the same ports.
+`--wait` returns only once every container reports healthy. Each server
+exposes an MCP endpoint at `/mcp` over Streamable HTTP, with a `runtime_versions`
+tool; the orchestrator's graph calls all three.
 
 The three servers are on Docker networks marked `internal`: no route to the
 internet, and none to Postgres. Only the orchestrator crosses that boundary,
@@ -76,6 +83,7 @@ import.
 
 ## Status
 
-Scaffolding: repo layout, CI, the design and integration documents, and a
-container per component with the sandbox boundary in place. No MCP servers and
-no analysis code yet.
+Skeleton: repo layout, CI, the design and integration documents, a container
+per component, an MCP server in each sandbox with a LangGraph graph calling
+them, and the sandbox boundary enforced by runtime tests. No analysis code and
+no model call yet.

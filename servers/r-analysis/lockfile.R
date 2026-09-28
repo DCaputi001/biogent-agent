@@ -8,9 +8,21 @@
 # the generator, and commit the resulting lockfile alongside this change.
 
 R_PACKAGES <- c(
-  # Serves the health endpoint now and the MCP HTTP transport from 7.2.
-  "httpuv"
+  # The MCP server itself: mcp_server(type = "http") speaks Streamable HTTP,
+  # which the Python SDK's client talks to (verified before this was adopted).
+  # Brings ellmer, httr2, nanonext, openssl and processx with it.
+  "mcptools",
+  # Used directly by the server and the healthcheck.
+  "httpuv",
+  "jsonlite",
+  "httr2"
 )
+
+# The rocker image pins CRAN to the snapshot current when its R version shipped
+# -- 2025-02-27 for R 4.4.2 -- and mcptools did not exist yet at that date. The
+# snapshot is therefore chosen here rather than inherited, which also means the
+# package set stops moving when the base image is rebuilt.
+CRAN_SNAPSHOT <- "https://p3m.dev/cran/__linux__/noble/2026-09-20"
 
 # Build in a scratch directory so renv's project files (.Rprofile, renv/) are
 # never created in the repo: only the lockfile is an output.
@@ -19,6 +31,10 @@ OUTPUT_LOCKFILE <- "/out/renv.lock"
 
 dir.create(BUILD_DIR, showWarnings = FALSE)
 setwd(BUILD_DIR)
+
+# Set before init so the URL is what renv records in the lockfile, and so
+# restore() inside the image resolves from the same snapshot.
+options(repos = c(CRAN = CRAN_SNAPSHOT))
 
 renv::init(bare = TRUE, restart = FALSE)
 renv::install(R_PACKAGES)

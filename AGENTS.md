@@ -63,12 +63,20 @@ uv run pytest -q
 
 docker compose build
 docker compose up -d --wait
+
+# Runtime isolation tests. Needs the stack up; CI runs these too.
+$env:BIOGENT_REQUIRE_DOCKER_STACK = "1"; uv run pytest -q -m docker
 ```
 
 The analysis servers sit on `internal` Docker networks with no route out and
 no route to Postgres. If something you are building seems to need a sandbox to
 reach the network or the database, that is a design question for `DESIGN.md`,
 not a line to add to `docker-compose.yml`.
+
+Every tool body goes through `run_tool` (`common/mcp_app.py`, and the R
+equivalent in `servers/r-analysis/main.R`), which enforces a wall-clock limit
+by killing the process running it. A tool that bypasses it is a tool that can
+hold a sandbox indefinitely.
 
 Local only, by design. There is no staging environment and no deploy command
 in this repo, and adding one is a change to its security posture, not a

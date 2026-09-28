@@ -8,16 +8,41 @@ requires-python = ">=3.10"
 dependencies = []
 
 [dependency-groups]
+# One group per container. The split is a security boundary, not tidiness: an
+# analysis sandbox must not be able to hold a model client or a database
+# driver, and `uv sync --only-group python-analysis` in that image makes an
+# attempt to add one a visible diff. One lockfile keeps the versions shared.
+orchestrator = [
+    "mcp>=2.2.0",
+    "langgraph>=1.2.0",
+]
+python-analysis = [
+    "mcp>=2.2.0",
+    "uvicorn>=0.34",
+]
+data-access = [
+    "mcp>=2.2.0",
+    "uvicorn>=0.34",
+]
 dev = [
     "pytest",
     "ruff",
     # tests/test_repo_invariants.py parses the CI workflows and the compose
     # file to check the repo's own structural guarantees.
     "pyyaml",
+    # The orchestrator's client and the graph are exercised by the runtime
+    # isolation tests, which run on the host against the compose stack.
+    {include-group = "orchestrator"},
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+# Runtime isolation tests need the compose stack up, so they are not part of
+# the fast suite. CI runs them separately after `docker compose up --wait`.
+addopts = "-m 'not docker'"
+markers = [
+    "docker: requires the local docker compose stack to be running",
+]
 
 [tool.uv]
 # This repo is a workspace, not a distributable package: the components

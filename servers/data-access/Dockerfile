@@ -11,11 +11,18 @@ FROM python:3.12-slim-bookworm
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    PATH=/app/.venv/bin:$PATH \
+    UV_PROJECT_ENVIRONMENT=/app/.venv \
+    UV_LINK_MODE=copy
 
 RUN useradd --system --uid 10001 --user-group biogent
 
 WORKDIR /app
+
+COPY --from=ghcr.io/astral-sh/uv:0.12.10 /uv /bin/uv
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --only-group data-access
 
 COPY common/ ./common/
 COPY servers/data-access/main.py ./servers/data-access/main.py

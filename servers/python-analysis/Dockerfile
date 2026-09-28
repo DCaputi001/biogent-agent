@@ -11,11 +11,22 @@ FROM python:3.12-slim-bookworm
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    PATH=/app/.venv/bin:$PATH \
+    UV_PROJECT_ENVIRONMENT=/app/.venv \
+    UV_LINK_MODE=copy
 
 RUN useradd --system --uid 10001 --user-group biogent
 
 WORKDIR /app
+
+# --only-group installs this component's dependencies and no others. That is
+# the security boundary in package form: this image cannot acquire a model
+# client or a database driver without the group changing, which is a visible
+# diff in pyproject.toml.
+COPY --from=ghcr.io/astral-sh/uv:0.12.10 /uv /bin/uv
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --only-group python-analysis
 
 COPY common/ ./common/
 COPY servers/python-analysis/main.py ./servers/python-analysis/main.py

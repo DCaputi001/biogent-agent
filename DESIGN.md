@@ -108,6 +108,29 @@ for it. The layout is in `docker-compose.yml`, and
 `tests/test_compose_isolation.py` fails if a sandbox is ever attached to a
 network with a way out.
 
+### The timeout kills a process, it does not ask a tool to stop
+
+Every tool body runs in a child process that the server kills at a wall-clock
+deadline (`common/tooling.py`).
+
+**Why not a thread or a signal:** the case this exists for is a tool that has
+stopped cooperating — a diverging optimisation, a runaway loop inside a
+compiled routine. A thread cannot be interrupted, and a signal handler does
+not run until the interpreter regains control, which is exactly what such a
+loop never gives up. A process can always be killed by the operating system.
+The cost is a fresh interpreter per call, which is noise next to the runtime
+of real analysis.
+
+R has no equivalent, so the R server uses `setTimeLimit`, which interrupts
+where R checks for interrupts. That covers R-level loops and not compiled
+ones; the container's CPU and memory limits are the backstop. The limit is
+also cleared as each tool returns — left set, it applies to the server's own
+event loop and takes the server down with it.
+
+Each analysis server therefore carries one diagnostic tool that deliberately
+misbehaves, so the kill path is tested through a real MCP call rather than
+only in a unit test of the harness.
+
 ---
 
 ## Decision: the agent never constructs a file path

@@ -17,6 +17,11 @@ RUN Rscript -e 'install.packages("renv")'
 
 RUN useradd --system --uid 10001 --user-group biogent
 
+# R resolves "~" on startup and warns when it does not exist. The rootfs is
+# read-only at runtime, so point HOME at the writable tmpfs rather than
+# creating a home directory R cannot use.
+ENV HOME=/tmp
+
 WORKDIR /app
 
 # Restore into the site library rather than a project library: the runtime
@@ -25,14 +30,18 @@ WORKDIR /app
 COPY servers/r-analysis/renv.lock ./renv.lock
 RUN Rscript -e 'renv::restore(library = .libPaths()[1], prompt = FALSE)'
 
-COPY servers/r-analysis/health.R ./health.R
+COPY servers/r-analysis/main.R ./main.R
+COPY servers/r-analysis/healthcheck.R ./healthcheck.R
 
 USER biogent
 
 EXPOSE 8000
 
-# No curl in the base image, and R is already here.
-HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=5 \
-    CMD ["Rscript", "-e", "if (!grepl('\"status\": \"ok\"', paste(readLines(url('http://127.0.0.1:8000/healthz'), warn = FALSE), collapse = ''))) quit(status = 1)"]
+# Speaks MCP rather than checking an open port: mcptools serves /mcp only, and
+# a listening socket does not prove the server can take a tool call. Slower to
+# start than the Python servers' GET /healthz, hence the longer start period --
+# R has a package library to load.
+HEALTHCHECK --interval=10s --timeout=10s --start-period=30s --retries=5 \
+    CMD ["Rscript", "healthcheck.R"]
 
-CMD ["Rscript", "health.R"]
+CMD ["Rscript", "main.R"]
