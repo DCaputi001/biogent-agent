@@ -36,6 +36,7 @@ orchestrator/              LangGraph graph
 servers/python-analysis/   sandboxed Python analysis tools (MCP)
 servers/r-analysis/        sandboxed R analysis tools (MCP)
 servers/data-access/       resolves dataset IDs to storage (MCP)
+common/                    shared code with no sandbox-forbidden dependencies
 evals/                     rediscovery and planted-signal evals, with reports
 tests/                     unit tests, including repo invariants
 ```
@@ -49,10 +50,21 @@ Every path is relative to the repo root, so the whole tree can be moved into
 
 ```powershell
 uv sync
-docker compose up -d postgres
 uv run ruff check .
 uv run pytest -q
+
+docker compose build
+docker compose up -d --wait
 ```
+
+`--wait` returns only once every container reports healthy. Each component
+currently serves a health endpoint and nothing else; the MCP servers replace
+those handlers on the same ports.
+
+The three servers are on Docker networks marked `internal`: no route to the
+internet, and none to Postgres. Only the orchestrator crosses that boundary,
+and only it publishes a port (`8000`). `tests/test_compose_isolation.py`
+fails if that ever stops being true.
 
 Local only. **This repo has no deploy path, no cloud credentials and no
 infrastructure code, and that is a deliberate security property rather than an
@@ -64,5 +76,6 @@ import.
 
 ## Status
 
-Scaffolding: repo layout, CI, and the design and integration documents. No
-analysis code yet.
+Scaffolding: repo layout, CI, the design and integration documents, and a
+container per component with the sandbox boundary in place. No MCP servers and
+no analysis code yet.

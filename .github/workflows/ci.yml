@@ -98,3 +98,33 @@ jobs:
           # every one of them.
           ANTHROPIC_API_KEY: ""
         run: uv run pytest -q
+
+  images:
+    # Phase 7.1's checkpoint, as a check rather than a claim: every component
+    # image builds, and the whole stack comes up healthy.
+    #
+    # Build only. Nothing is pushed, there is no registry, and there is
+    # nothing to authenticate against -- images are built where they run until
+    # deployment becomes the main repo's problem after the import.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build every component image
+        # `compose build` rather than four `docker build` calls: the build
+        # contexts and Dockerfile paths are already declared in the compose
+        # file, and two copies of them would drift.
+        run: docker compose build
+
+      - name: Start the stack and wait for every healthcheck
+        # --wait fails the step unless every service reports healthy, which is
+        # what makes "docker compose up starts every container" a real check.
+        run: docker compose up --detach --wait --wait-timeout 300
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose down --volumes
