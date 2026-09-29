@@ -58,10 +58,17 @@ enforces that.
 
 ```powershell
 uv sync
-docker compose up -d postgres
 uv run ruff check .
 uv run pytest -q
+
+docker compose build
+docker compose up -d --wait
 ```
+
+The analysis servers sit on `internal` Docker networks with no route out and
+no route to Postgres. If something you are building seems to need a sandbox to
+reach the network or the database, that is a design question for `DESIGN.md`,
+not a line to add to `docker-compose.yml`.
 
 Local only, by design. There is no staging environment and no deploy command
 in this repo, and adding one is a change to its security posture, not a

@@ -87,6 +87,27 @@ sandbox is not defense in depth here; it is the only defense.
 The researcher's Anthropic API key stays in the orchestrator and is never
 passed to any server.
 
+### Transport: MCP over HTTP on an internal network
+
+The servers speak MCP over HTTP and sit on a Docker network marked
+`internal`. The orchestrator is on that network as well as an ordinary one;
+nothing else is.
+
+**Why this and not stdio:** "no outbound route at all" and "the orchestrator
+can call the server" sound contradictory, and the obvious way out — running
+each server as a stdio subprocess of the orchestrator — quietly throws away
+the container boundary that the previous section is built on. An internal
+network resolves it instead: Docker attaches no gateway, so a sandbox can
+reach neither the internet nor the host nor the database, while the
+orchestrator can still reach the sandbox. Each runtime keeps its own image,
+its own limits, and its own lifecycle.
+
+The same reasoning puts Postgres on a second internal network shared only with
+the orchestrator: a sandbox has no route to it, rather than lacking a password
+for it. The layout is in `docker-compose.yml`, and
+`tests/test_compose_isolation.py` fails if a sandbox is ever attached to a
+network with a way out.
+
 ---
 
 ## Decision: the agent never constructs a file path

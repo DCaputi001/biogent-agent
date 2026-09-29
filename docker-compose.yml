@@ -5,9 +5,25 @@
 # Phase 7.9, and a relative-only compose file makes that a move rather than a
 # rewrite. tests/test_repo_invariants.py enforces it.
 #
-# Only Postgres so far. The orchestrator and the MCP servers land in 7.1, each
-# with its own Dockerfile and its own service block here. An empty placeholder
-# service that cannot start would be worse than an absent one.
+# The four components each serve a health endpoint and nothing else so far. The
+# MCP servers and the LangGraph graph replace those handlers in 7.2, on the
+# same ports and the same networks -- the boundary below is built first, on
+# purpose, because it is what makes opening an untrusted file survivable.
+#
+# THE NETWORK LAYOUT IS THE SECURITY BOUNDARY, not a convenience:
+#
+#   sandbox  (internal) -- the three servers and the orchestrator
+#   backend  (internal) -- postgres and the orchestrator
+#   egress   (external) -- the orchestrator alone
+#
+# A sandbox container is on `sandbox` only. Internal networks get no gateway,
+# so there is no outbound route off the host, and no route to postgres either:
+# "no network access" and "no database access" from DESIGN.md, enforced by
+# docker rather than asserted in prose. Only the orchestrator straddles the
+# three, and only the orchestrator publishes a port.
+#
+# tests/test_compose_isolation.py fails if a sandbox is ever attached to an
+# egress network, given a port, or handed an environment.
 
 services:
   postgres:
@@ -23,11 +39,118 @@ services:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U biogent -d biogent_agent"]
       interval: 5s
       timeout: 5s
       retries: 10
+
+  orchestrator:
+    # The only component that holds the researcher's API key, reaches the
+    # model, and talks to the database. Its database connection arrives with
+    # the checkpointer in 7.5, read the way INTEGRATION_CONTRACT.md section 6
+    # describes rather than from a constant here.
+    build:
+      context: .
+      dockerfile: orchestrator/Dockerfile
+    ports:
+      - "8000:8000"
+    networks:
+      - egress
+      - backend
+      - sandbox
+    depends_on:
+      postgres:
+        condition: service_healthy
+      python-analysis:
+        condition: service_healthy
+      r-analysis:
+        condition: service_healthy
+      data-access:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+  python-analysis:
+    # scanpy-side analysis tools from 7.4.
+    build:
+      context: .
+      dockerfile: servers/python-analysis/Dockerfile
+    networks:
+      - sandbox
+    read_only: true
+    tmpfs:
+      # The one writable path. Analysis tools write intermediates here and
+      # nowhere else; it is memory-backed, so it also disappears with the
+      # container rather than persisting an uploaded researcher's data.
+      - /scratch
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # Top-level limit keys, not deploy.resources: docker compose applies these
+    # outside swarm, and deploy.resources is ignored there.
+    mem_limit: 2g
+    cpus: 2.0
+    pids_limit: 256
+
+  r-analysis:
+    # Seurat/SingleCellExperiment/URD adapters from 7.3. This is the container
+    # that opens uploaded .rds files, so it is the reason the whole boundary
+    # exists (CVE-2024-27322).
+    build:
+      context: .
+      dockerfile: servers/r-analysis/Dockerfile
+    networks:
+      - sandbox
+    read_only: true
+    tmpfs:
+      - /scratch
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
+    cpus: 2.0
+    pids_limit: 256
+
+  data-access:
+    # Resolves opaque dataset IDs to storage locations from 7.3. Locally that
+    # will be a read-only mount of a folder under data/; after the import it is
+    # a user-scoped S3 prefix, and the credentials that implies are a decision
+    # to make then, deliberately, not by adding an environment variable here.
+    build:
+      context: .
+      dockerfile: servers/data-access/Dockerfile
+    networks:
+      - sandbox
+    read_only: true
+    tmpfs:
+      - /scratch
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
+
+networks:
+  # No gateway, so nothing on these can reach the host network or the internet.
+  sandbox:
+    internal: true
+  backend:
+    internal: true
+  # The orchestrator alone: it has to reach the Anthropic API.
+  egress:
 
 volumes:
   postgres_data:

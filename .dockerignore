@@ -1,0 +1,30 @@
+# Build context exclusions.
+#
+# Every image builds from the repo root, because each one needs common/ as well
+# as its own directory. That makes the context the whole tree, so the things
+# that must never reach an image are listed here.
+#
+# The first three blocks are about size and cache invalidation. The last one is
+# not: researcher data and the local build plan must not be baked into an image
+# any more than they may be committed -- see AGENTS.md.
+
+.git/
+.github/
+.gitignore
+
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+*.md
+
+tests/
+evals/
+
+data/
+uploads/
+*.h5ad
+*.rds
+BIOGENT_PLAN.md
