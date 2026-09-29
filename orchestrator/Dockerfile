@@ -12,17 +12,26 @@ FROM python:3.12-slim-bookworm
 # because the runtime filesystem is read-only.
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    PATH=/app/.venv/bin:$PATH \
+    UV_PROJECT_ENVIRONMENT=/app/.venv \
+    UV_LINK_MODE=copy
 
 # Fixed uid, so ownership of anything mounted in is predictable across hosts.
 RUN useradd --system --uid 10001 --user-group biogent
 
 WORKDIR /app
 
-# common/ first: it changes less often than component code, so the layer
+# This is the only image whose group includes langgraph and, later, a model
+# client. The sandboxes install their own groups and cannot reach these.
+COPY --from=ghcr.io/astral-sh/uv:0.12.10 /uv /bin/uv
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --only-group orchestrator
+
+# common/ next: it changes less often than component code, so the layer
 # cache survives most edits.
 COPY common/ ./common/
-COPY orchestrator/main.py ./orchestrator/main.py
+COPY orchestrator/ ./orchestrator/
 
 USER biogent
 

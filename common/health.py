@@ -1,12 +1,11 @@
 # health.py
-# Dependency-free HTTP health endpoint shared by every Python component of this
-# service. Exposes serve(), which blocks; each component's main.py is a thin
-# wrapper around it.
+# The /healthz contract every container answers, and a dependency-free server
+# that serves it. The MCP servers mount health_payload() as a Starlette route
+# next to /mcp (see common/mcp_app.py); the orchestrator, which is a client and
+# runs no MCP server, uses serve() directly.
 #
-# This is deliberately the whole of what a container runs in Phase 7.1. The MCP
-# application replaces the handler on the same port and network in 7.2, so the
-# compose wiring, the network boundary and the healthchecks are all proven
-# before any tool exists to call.
+# One payload builder for both, so a healthcheck means the same thing in every
+# container.
 
 from __future__ import annotations
 
@@ -14,16 +13,17 @@ import json
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-HEALTH_PATH = "/healthz"
-
-# Every component listens on the same port. Only the orchestrator publishes it
-# to the host; the servers are reachable on the internal compose network only.
-DEFAULT_PORT = 8000
+from common.servers import HEALTH_PATH, SERVER_PORT
 
 # Binding to a specific interface inside a container gains nothing -- the
 # container's network namespace is the boundary, and the compose network is
 # what makes it internal.
 BIND_HOST = "0.0.0.0"
+
+
+def health_payload(component: str) -> dict[str, str]:
+    """The body of a healthy response, shared by every transport."""
+    return {"status": "ok", "component": component}
 
 
 def _build_handler(component: str) -> type[BaseHTTPRequestHandler]:
@@ -44,7 +44,7 @@ def _build_handler(component: str) -> type[BaseHTTPRequestHandler]:
             if self.path != HEALTH_PATH:
                 self._respond(404, {"error": "not found", "path": self.path})
                 return
-            self._respond(200, {"status": "ok", "component": component})
+            self._respond(200, health_payload(component))
 
         def _respond(self, status: int, payload: dict[str, object]) -> None:
             body = json.dumps(payload).encode()
@@ -63,7 +63,7 @@ def _build_handler(component: str) -> type[BaseHTTPRequestHandler]:
     return HealthRequestHandler
 
 
-def serve(component: str, port: int = DEFAULT_PORT) -> None:
+def serve(component: str, port: int = SERVER_PORT) -> None:
     """Serve the health endpoint until the process is stopped."""
     server = HTTPServer((BIND_HOST, port), _build_handler(component))
     print(f"{component} listening on {BIND_HOST}:{port}{HEALTH_PATH}", flush=True)
