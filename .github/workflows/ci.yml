@@ -122,12 +122,19 @@ jobs:
         # file, and two copies of them would drift.
         run: docker compose build
 
+      - name: Generate the test fixtures
+        # Synthetic datasets, written by the component images into data/.
+        # They are not committed: .gitignore bans *.h5ad and *.rds outright,
+        # which is what keeps a researcher's dataset out of git, and an
+        # exception for tests/ would be a hole in exactly the wrong place.
+        run: sh scripts/generate-fixtures.sh
+
       - name: Start the stack and wait for every healthcheck
         # --wait fails the step unless every service reports healthy, which is
         # what makes "docker compose up starts every container" a real check.
         run: docker compose up --detach --wait --wait-timeout 300
 
-      - name: Runtime isolation tests
+      - name: Runtime isolation and ingestion tests
         env:
           # Without this the suite skips when the stack is down, which is
           # right on a laptop and wrong here: a security test that skips in CI

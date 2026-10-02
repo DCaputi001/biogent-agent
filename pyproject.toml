@@ -2,9 +2,16 @@
 name = "biogent-agent"
 version = "0.1.0"
 description = "BioGent's bioinformatics analysis agent — LangGraph orchestrator with sandboxed MCP servers"
-# Matches services/rag in the main BioGent repo, so the import into
-# services/bio-agent/ does not drag a second Python version in with it.
-requires-python = ">=3.10"
+# services/rag in the main BioGent repo is >=3.10, and this was too, so that
+# the import would not drag a second Python version in with it. The
+# single-cell stack forced the floor up: anndata 0.13 requires >=3.12, and
+# scanpy follows the same policy, so 3.10 was a floor this service could not
+# actually build on. The containers already run 3.12.
+#
+# The consequence for the import is recorded in INTEGRATION_CONTRACT.md:
+# services/bio-agent/ needs its own Python base image rather than sharing the
+# RAG service's.
+requires-python = ">=3.12"
 dependencies = []
 
 [dependency-groups]
@@ -19,6 +26,10 @@ orchestrator = [
 python-analysis = [
     "mcp>=2.2.0",
     "uvicorn>=0.34",
+    # Reads .h5ad, and writes the fixtures the ingestion tests run against.
+    # Brings numpy, scipy, pandas and h5py with it -- the scanpy side of the
+    # analysis stack starts here.
+    "anndata>=0.12",
 ]
 data-access = [
     "mcp>=2.2.0",

@@ -54,10 +54,17 @@ uv run ruff check .
 uv run pytest -q
 
 docker compose build
+
+# Synthetic test datasets, written into data/uploads/ by the component
+# images. Never committed: *.h5ad and *.rds are git-ignored so that a real
+# researcher dataset cannot be committed by accident.
+sh scripts/generate-fixtures.sh
+
 docker compose up -d --wait
 
-# The runtime isolation tests need the stack up, so they are not in the fast
-# suite. This is the check that the sandbox boundary actually holds.
+# The runtime isolation and ingestion tests need the stack up, so they are not
+# in the fast suite. This is the check that the sandbox boundary actually
+# holds, and that a dataset can cross it.
 $env:BIOGENT_REQUIRE_DOCKER_STACK = "1"; uv run pytest -q -m docker
 
 # What the graph does today: one tool call to each server.
@@ -72,6 +79,16 @@ The three servers are on Docker networks marked `internal`: no route to the
 internet, and none to Postgres. Only the orchestrator crosses that boundary,
 and only it publishes a port (`8000`). `tests/test_compose_isolation.py`
 fails if that ever stops being true.
+
+Datasets live under `data/`, which is git-ignored in full:
+
+```
+data/uploads/<dataset-id>/    what the researcher gave us, read-only in every sandbox
+data/workspace/<dataset-id>/  derived files, writable
+```
+
+A dataset is addressed by its opaque ID. No tool takes a path, and no tool
+result contains one.
 
 Local only. **This repo has no deploy path, no cloud credentials and no
 infrastructure code, and that is a deliberate security property rather than an

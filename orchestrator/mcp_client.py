@@ -13,6 +13,7 @@ import json
 from typing import Any
 
 from mcp import Client
+from mcp.shared.exceptions import MCPError
 from mcp.types import TextContent
 
 from common.servers import mcp_url
@@ -36,8 +37,22 @@ async def call_tool(
     timeout: float = CLIENT_TIMEOUT_SECONDS,
 ) -> Any:
     """Call one tool on one server and return its result."""
-    async with Client(mcp_url(server), read_timeout_seconds=timeout) as client:
-        result = await client.call_tool(tool, arguments or {})
+    try:
+        async with Client(mcp_url(server), read_timeout_seconds=timeout) as client:
+            result = await client.call_tool(tool, arguments or {})
+    except* MCPError as group:
+        # A refused call arrives in one of two shapes depending on the server:
+        # the Python SDK returns an error result, while mcptools raises the R
+        # condition as a JSON-RPC error. Both mean "the tool said no", and a
+        # caller should not have to know which runtime answered.
+        #
+        # except* because the client runs inside an anyio task group, which
+        # wraps whatever escapes it in an ExceptionGroup -- a plain
+        # `except MCPError` matches none of them. Anything that is not an
+        # MCPError still propagates, group and all.
+        raise ToolCallFailed(
+            f"{server}.{tool} failed: {_messages_in(group)}"
+        ) from group
 
     if result.is_error:
         raise ToolCallFailed(f"{server}.{tool} failed: {_text_of(result.content)}")
@@ -56,6 +71,17 @@ async def list_tools(server: str, timeout: float = CLIENT_TIMEOUT_SECONDS) -> li
     async with Client(mcp_url(server), read_timeout_seconds=timeout) as client:
         listing = await client.list_tools()
     return [tool.name for tool in listing.tools]
+
+
+def _messages_in(group: BaseExceptionGroup) -> str:
+    """Flatten a nested exception group into one readable line."""
+    messages: list[str] = []
+    for error in group.exceptions:
+        if isinstance(error, BaseExceptionGroup):
+            messages.append(_messages_in(error))
+        else:
+            messages.append(str(error))
+    return "; ".join(message for message in messages if message)
 
 
 def _text_of(content: list[Any]) -> str:

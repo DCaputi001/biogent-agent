@@ -108,6 +108,47 @@ for it. The layout is in `docker-compose.yml`, and
 `tests/test_compose_isolation.py` fails if a sandbox is ever attached to a
 network with a way out.
 
+### How a dataset reaches a sandbox
+
+Two bind mounts, and only two:
+
+| Mount | Mode | Holds |
+|---|---|---|
+| `uploads` | read-only in every sandbox | exactly what the researcher gave us |
+| `workspace` | writable | converted files and intermediates |
+
+**Why uploads are read-only everywhere:** the original file is the evidence
+every later number is traceable to, and the container most likely to damage
+it is the one deserializing it. Nothing that analyses a file can alter it.
+
+**Why the orchestrator mounts neither:** it holds the researcher's API key and
+it is the only component with a route off the host. An uploaded `.rds` is
+untrusted code, so the process with the credentials does not open one.
+
+A shared mount is a weaker boundary than no mount, and it is the price of
+working on data at all — passing a multi-gigabyte matrix through JSON-RPC is
+not an alternative. `tests/test_compose_isolation.py` names the two permitted
+mounts exactly and fails on any third, and the runtime half of that check is
+in `tests/ingestion/`.
+
+### Decision: anndataR, not zellkonverter
+
+The build plan named `zellkonverter` for turning a SingleCellExperiment into
+an `.h5ad`. This service uses `anndataR` instead.
+
+**Why:** `zellkonverter` converts through `reticulate` and `basilisk`, which
+means a conda-managed Python environment inside the R container. That
+container has no network route and a read-only filesystem, so the environment
+has to be fully materialised at build time and never look for anything at
+runtime — a lot of failure surface in the one container that opens untrusted
+files. `anndataR` reads and writes `.h5ad` natively in R.
+
+The cost is an R version floor: `anndataR` needs R >= 4.5 and Bioconductor
+3.23, so the image runs R 4.6.1, above the plan's 4.4.0. Bioconductor
+publishes no Linux binaries, so those packages compile; the toolchain and
+headers live in a build stage and only the finished library is copied into
+the runtime image.
+
 ### The timeout kills a process, it does not ask a tool to stop
 
 Every tool body runs in a child process that the server kills at a wall-clock

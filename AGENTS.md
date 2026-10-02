@@ -62,11 +62,17 @@ uv run ruff check .
 uv run pytest -q
 
 docker compose build
+sh scripts/generate-fixtures.sh
 docker compose up -d --wait
 
-# Runtime isolation tests. Needs the stack up; CI runs these too.
+# Runtime isolation and ingestion tests. Needs the stack up; CI runs these too.
 $env:BIOGENT_REQUIRE_DOCKER_STACK = "1"; uv run pytest -q -m docker
 ```
+
+Test datasets are generated, never committed. `sh scripts/generate-fixtures.sh`
+writes them into `data/uploads/`; `tests/fixtures/spec.py` is the single
+description of what they contain, imported by both the generators and the
+tests.
 
 The analysis servers sit on `internal` Docker networks with no route out and
 no route to Postgres. If something you are building seems to need a sandbox to
