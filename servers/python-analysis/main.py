@@ -9,6 +9,7 @@
 from mcp.server import MCPServer
 
 from common.diagnostics import busy_wait
+from common.h5ad import summarize
 from common.mcp_app import run_server, run_tool
 from common.runtime import runtime_report
 from common.servers import PYTHON_ANALYSIS
@@ -16,7 +17,7 @@ from common.tooling import TOOL_TIMEOUT_SECONDS
 
 # Packages whose versions belong in a methods section. The scientific stack
 # joins this list as the analysis tools land.
-REPORTED_PACKAGES = ("mcp", "uvicorn")
+REPORTED_PACKAGES = ("mcp", "uvicorn", "anndata", "h5py", "numpy", "scipy")
 
 # Ceiling on what the diagnostic will accept, so a typo cannot ask for a spin
 # measured in hours. Comfortably past the timeout it exists to trigger.
@@ -28,6 +29,16 @@ def register_tools(server: MCPServer) -> None:
     def runtime_versions() -> dict[str, object]:
         """Report the Python version and analysis package versions in use."""
         return run_tool(runtime_report, PYTHON_ANALYSIS, REPORTED_PACKAGES)
+
+    @server.tool()
+    def summarize_h5ad(dataset_id: str, filename: str) -> dict[str, object]:
+        """Report the shape and structure of an uploaded AnnData file.
+
+        Takes a dataset ID and a file name, never a path. The file is read in
+        backed mode, so a dataset larger than this sandbox's memory limit can
+        still be described.
+        """
+        return run_tool(summarize, dataset_id, filename)
 
     @server.tool()
     def diagnostics_busy_wait(seconds: float) -> str:

@@ -24,6 +24,17 @@
 #
 # tests/test_compose_isolation.py fails if a sandbox is ever attached to an
 # egress network, given a port, or handed an environment.
+#
+# DATASETS REACH THE SANDBOXES THROUGH TWO BIND MOUNTS, and only these two:
+#
+#   ./data/uploads    read-only everywhere -- exactly what the researcher gave
+#                     us. The container most likely to damage the original is
+#                     the one deserializing it, so none of them can write here.
+#   ./data/workspace  writable -- converted files and intermediates.
+#
+# Neither is mounted into the orchestrator: it holds the API key, and it has
+# no business reading an uploaded file (AGENTS.md, first rule). Both paths are
+# relative, so they survive the move into services/bio-agent/.
 
 services:
   postgres:
@@ -81,6 +92,9 @@ services:
     build:
       context: .
       dockerfile: servers/python-analysis/Dockerfile
+    volumes:
+      - ./data/uploads:/data/uploads:ro
+      - ./data/workspace:/data/workspace
     networks:
       - sandbox
     read_only: true
@@ -107,6 +121,9 @@ services:
     build:
       context: .
       dockerfile: servers/r-analysis/Dockerfile
+    volumes:
+      - ./data/uploads:/data/uploads:ro
+      - ./data/workspace:/data/workspace
     networks:
       - sandbox
     read_only: true
@@ -129,6 +146,8 @@ services:
     build:
       context: .
       dockerfile: servers/data-access/Dockerfile
+    volumes:
+      - ./data/uploads:/data/uploads:ro
     networks:
       - sandbox
     read_only: true

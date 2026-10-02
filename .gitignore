@@ -14,6 +14,7 @@
 # the plan. This line travels with the repo. The cost is leaking the filename,
 # not its contents.
 BIOGENT_PLAN.md
+.claude
 
 # --- Python ---
 __pycache__/

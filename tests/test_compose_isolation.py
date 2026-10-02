@@ -37,6 +37,23 @@ CREDENTIAL_KEYS = ["environment", "env_file", "secrets"]
 
 SCRATCH_PATH = "/scratch"
 
+# The only mounts a sandbox may have, as "host:container" prefixes. A dataset
+# has to reach the container somehow, and these two are how: uploads are what
+# the researcher gave us, workspace is what we derive from it.
+#
+# This list replaced a blanket "a sandbox mounts no volumes" assertion when
+# Phase 7.3 needed datasets to arrive. Weakening a test to make code pass is
+# against the rules in AGENTS.md, so the replacement was flagged in review and
+# is narrower in every other respect: the mounts are named, uploads must be
+# read-only, and anything else still fails.
+UPLOADS_MOUNT = "./data/uploads:/data/uploads"
+WORKSPACE_MOUNT = "./data/workspace:/data/workspace"
+
+ALLOWED_MOUNTS = {
+    f"{UPLOADS_MOUNT}:ro",
+    WORKSPACE_MOUNT,
+}
+
 
 def _compose() -> dict:
     return yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text())
@@ -122,10 +139,45 @@ def test_sandbox_filesystem_is_read_only_apart_from_scratch(service_name: str) -
         "holding a researcher's data."
     )
 
-    assert not service.get("volumes"), (
-        f"{service_name} mounts a volume. Persistent writable storage in a "
-        "sandbox defeats read_only; anything durable goes through the "
-        "data-access server's resolved location instead."
+
+@pytest.mark.parametrize("service_name", SANDBOX_SERVICES)
+def test_a_sandbox_mounts_only_the_dataset_volumes(service_name: str) -> None:
+    """Datasets arrive by bind mount; nothing else may."""
+    for mount in _service(service_name).get("volumes") or []:
+        assert mount in ALLOWED_MOUNTS, (
+            f"{service_name} mounts {mount!r}. A sandbox may mount only "
+            f"{sorted(ALLOWED_MOUNTS)} -- another writable path defeats "
+            "read_only, and another host path is a way out of the repo."
+        )
+
+
+@pytest.mark.parametrize("service_name", SANDBOX_SERVICES)
+def test_a_sandbox_cannot_write_to_the_uploads_volume(service_name: str) -> None:
+    """The original upload is evidence and must survive being analysed.
+
+    The container most likely to corrupt a researcher's file is the one
+    deserializing it, so no sandbox gets write access to the uploads.
+    """
+    mounts = _service(service_name).get("volumes") or []
+    uploads = [mount for mount in mounts if mount.startswith(UPLOADS_MOUNT)]
+
+    for mount in uploads:
+        assert mount.endswith(":ro"), (
+            f"{service_name} mounts the uploads volume as {mount!r}, which is "
+            "writable. Uploads are read-only in every sandbox."
+        )
+
+
+def test_the_orchestrator_cannot_read_uploads() -> None:
+    """The process holding the API key does not open researcher files.
+
+    AGENTS.md's first rule: an uploaded .rds is untrusted code, and opening
+    one anywhere that has credentials or a network route defeats the design.
+    """
+    mounts = _service(ORCHESTRATOR_SERVICE).get("volumes") or []
+    assert not mounts, (
+        f"the orchestrator mounts {mounts}. It holds the researcher's API key "
+        "and has an egress route; it must not be able to read an upload."
     )
 
 

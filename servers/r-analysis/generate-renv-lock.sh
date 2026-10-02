@@ -1,40 +1,37 @@
 #!/usr/bin/env sh
 # generate-renv-lock.sh
-# Regenerates servers/r-analysis/renv.lock inside the same R image the server
-# is built from, and copies only the lockfile back out.
+# Regenerates servers/r-analysis/renv.lock inside the same build environment
+# the server image uses, and copies only the lockfile back out.
 #
 # Run from the repo root after changing the package list in lockfile.R, then
 # commit the lockfile with that change. It is a developer step, not a build
 # step: the Dockerfile restores from the committed lockfile and never resolves
-# versions itself, because a build that picks its own versions is a build whose
-# results cannot be reproduced later.
+# versions itself, because a build that picks its own versions is a build
+# whose results cannot be reproduced later.
 
 set -eu
 
 SERVER_DIR="servers/r-analysis"
+DEPS_IMAGE="biogent-agent-r-deps"
 
-# Single source of truth for the R version: the Dockerfile's base image. A
-# lockfile generated against a different R than the image runs is worse than
-# no lockfile, because it looks authoritative.
-R_IMAGE=$(awk '/^FROM /{print $2; exit}' "${SERVER_DIR}/Dockerfile")
+. scripts/host-path.sh
 
-# Git Bash rewrites arguments that look like absolute POSIX paths, which turns
-# the container-side /out into C:/Program Files/Git/out and leaves the mount
-# pointing at nothing. cygpath gives docker the host path in the form Windows
-# wants; MSYS_NO_PATHCONV leaves the container-side paths alone.
-HOST_DIR="$(pwd)/${SERVER_DIR}"
-if command -v cygpath >/dev/null 2>&1; then
-    HOST_DIR=$(cygpath --windows "${HOST_DIR}")
-    MSYS_NO_PATHCONV=1
-    MSYS2_ARG_CONV_EXCL='*'
-    export MSYS_NO_PATHCONV MSYS2_ARG_CONV_EXCL
-fi
+# The Dockerfile's `deps` stage is the single source of truth for the R
+# version and the system libraries the packages compile against. Building it
+# here means the environment that resolves versions is the environment that
+# will install them -- a lockfile generated against a different R or a
+# different libcurl is worse than none, because it looks authoritative.
+echo "Building the ${DEPS_IMAGE} image from ${SERVER_DIR}/Dockerfile"
+docker build \
+    --target deps \
+    --tag "${DEPS_IMAGE}" \
+    --file "${SERVER_DIR}/Dockerfile" \
+    .
 
-echo "Generating ${SERVER_DIR}/renv.lock using ${R_IMAGE}"
-
+echo "Generating ${SERVER_DIR}/renv.lock"
 docker run --rm \
-    --volume "${HOST_DIR}:/out" \
-    "${R_IMAGE}" \
-    Rscript -e 'install.packages("renv"); source("/out/lockfile.R")'
+    --volume "$(host_path "${SERVER_DIR}"):/out" \
+    "${DEPS_IMAGE}" \
+    Rscript -e 'source("/out/lockfile.R")'
 
 echo "Done. Review the diff and commit renv.lock with the change that caused it."

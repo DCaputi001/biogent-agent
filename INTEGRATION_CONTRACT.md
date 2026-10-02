@@ -105,9 +105,21 @@ level over from documents.
 **The agent never sees or constructs a key.** See `DESIGN.md`, "the agent never
 constructs a file path."
 
-**TBD:** the exact prefix for datasets (`datasets/` vs reusing `documents/`),
-and whether an `.rds` plus its companion marker CSVs are one dataset ID or
-several.
+**DECIDED (2026-09-30): datasets get their own prefix,
+`users/{user_id}/datasets/{dataset_id}/{filename}`.** Locally that is
+`data/uploads/{dataset_id}/{filename}`, and the resolver
+(`common/datasets.py`) is the only thing that maps an ID to either. Reusing
+`documents/` would have put files the RAG ingestion worker picks up in the
+same prefix as files it must ignore, and one prefix serving two lifecycles is
+a bug waiting for a worker that does not check.
+
+A dataset ID names a **folder**, not a file: an `.rds` and its companion
+marker CSVs share one ID and are distinguished by file name. One ID per file
+would make "these belong together" something the agent has to reassemble, and
+that is exactly the kind of state it should not be holding.
+
+**TBD:** whether marker CSVs need a declared role in the folder (a manifest)
+or can be identified by content when they are read at 7.3's later slices.
 
 ---
 
@@ -201,3 +213,23 @@ until the backend exists in production.
 | Date | What changed in the main repo | What changed here |
 |---|---|---|
 | 2026-09-24 | — | First version, verified against the main repo. |
+| 2026-09-30 | — | Section 3: dataset prefix decided (`datasets/`, one ID per folder). New section 8: this service's Python floor moved to 3.12. |
+
+---
+
+## 8. Runtime versions
+
+**This service needs its own base images; it cannot share the RAG service's.**
+
+- **Python 3.12**, where `services/rag` is 3.10. The single-cell stack forced
+  it: `anndata` 0.13 requires >= 3.12 and `scanpy` follows the same policy, so
+  3.10 was a floor this service could not build on. `pyproject.toml` says
+  `requires-python = ">=3.12"`.
+- **R 4.6.1 with Bioconductor 3.23**, which the main repo has no equivalent of
+  at all. Required by `anndataR`; see `DESIGN.md`.
+
+**What this means at import:** `services/bio-agent/` keeps its own
+Dockerfiles and its own lockfiles, and a shared base image between the two
+services is not an option. Nothing in the main repo has to change for this —
+it is recorded so that the import does not start with an attempt to unify
+them.

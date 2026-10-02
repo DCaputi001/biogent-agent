@@ -9,6 +9,17 @@
 
 library(mcptools)
 
+# Attached, not merely installed. readRDS loads a class definition's namespace
+# on demand, but S4 methods are only dispatched for an attached package: with
+# SingleCellExperiment left to load lazily, dim() on a restored object returns
+# NULL and assayNames() is not found. Paying the startup cost once in a
+# long-lived server is the cheap side of that trade.
+suppressPackageStartupMessages({
+  library(SingleCellExperiment)
+})
+
+source("datasets.R")
+
 COMPONENT <- "r-analysis"
 PORT <- 8000
 
@@ -36,7 +47,9 @@ run_tool <- function(body) {
 
 # Packages whose versions belong in a methods section. The Seurat stack joins
 # this list as the adapters land.
-REPORTED_PACKAGES <- c("mcptools", "httpuv", "jsonlite")
+REPORTED_PACKAGES <- c(
+  "mcptools", "httpuv", "jsonlite", "SingleCellExperiment", "anndataR"
+)
 
 package_versions <- function(packages) {
   versions <- vapply(packages, function(p) as.character(utils::packageVersion(p)), character(1))
@@ -66,6 +79,68 @@ runtime_versions <- ellmer::tool(
   name = "runtime_versions"
 )
 
+# The first tool that opens a researcher's file. Everything about this
+# container -- no network, no credentials, read-only filesystem, dropped
+# capabilities -- exists so that this call is survivable: readRDS on a file we
+# did not create is equivalent to running code we did not write
+# (CVE-2024-27322).
+#
+# It reports structure, never contents. What the adapters need to know is what
+# kind of object this is, and that is also what Phase 7.0 is waiting on for
+# the pilot dataset.
+inspect_rds_impl <- function(dataset_id, filename) {
+  run_tool(function() {
+    path <- resolve_upload(dataset_id, filename)
+
+    object <- tryCatch(
+      readRDS(path),
+      error = function(e) {
+        stop(
+          sprintf("'%s' could not be read as an R object: %s", filename, conditionMessage(e)),
+          call. = FALSE
+        )
+      }
+    )
+
+    dimensions <- if (is.null(dim(object))) NULL else as.integer(dim(object))
+
+    jsonlite::toJSON(
+      list(
+        dataset_id = dataset_id,
+        filename = filename,
+        class = class(object),
+        is_s4 = isVirtualClass(class(object)[1]) || isS4(object),
+        dimensions = dimensions,
+        # Present only for the container types the adapters care about, and
+        # asked for defensively: an arbitrary object has no assays.
+        assay_names = tryCatch(
+          if (methods::is(object, "SummarizedExperiment")) {
+            SummarizedExperiment::assayNames(object)
+          } else {
+            NULL
+          },
+          error = function(e) NULL
+        )
+      ),
+      auto_unbox = TRUE,
+      null = "null"
+    )
+  })
+}
+
+inspect_rds <- ellmer::tool(
+  inspect_rds_impl,
+  description = paste(
+    "Inspect an uploaded .rds file and report what kind of R object it holds:",
+    "class, dimensions and assay names. Reports structure, not contents."
+  ),
+  arguments = list(
+    dataset_id = ellmer::type_string("The dataset's opaque ID."),
+    filename = ellmer::type_string("The file name within that dataset.")
+  ),
+  name = "inspect_rds"
+)
+
 cat(sprintf("%s starting MCP server on 0.0.0.0:%d\n", COMPONENT, PORT))
 flush(stdout())
 
@@ -74,7 +149,7 @@ flush(stdout())
 # session over a local socket. That is a developer convenience and, in a
 # container whose job is to open untrusted files, an extra door.
 mcp_server(
-  tools = list(runtime_versions),
+  tools = list(runtime_versions, inspect_rds),
   type = "http",
   host = "0.0.0.0",
   port = PORT,
